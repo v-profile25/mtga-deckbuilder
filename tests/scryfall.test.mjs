@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 import { ensureCardCache, loadCardDb, cacheExists, cacheStat } from "../src/scryfall.js";
@@ -11,12 +12,16 @@ const CACHE_PATH = path.join(__dirname, "..", "data", "scryfall-cache.json");
 
 // Shapes mirror Scryfall's real API responses (bulk-data listing, then the
 // default_cards bulk file) closely enough to exercise ensureCardCache's
-// fetch-and-filter logic without hitting the network.
+// fetch-and-filter logic without hitting the network. Scryfall retired the
+// plain-JSON "download_uri" on 2026-07-20 in favor of a gzipped
+// "jsonl_download_uri" (one JSON object per line) - that's the current,
+// primary format these tests mock; a couple of tests also check the old
+// plain-JSON field still works as a fallback.
 const FAKE_BULK_LISTING = {
   object: "list",
   data: [
-    { type: "oracle_cards", download_uri: "https://example.invalid/oracle-cards.json" },
-    { type: "default_cards", download_uri: "https://example.invalid/default-cards.json" },
+    { type: "oracle_cards", jsonl_download_uri: "https://example.invalid/oracle-cards.jsonl.gz" },
+    { type: "default_cards", jsonl_download_uri: "https://example.invalid/default-cards.jsonl.gz" },
   ],
 };
 
@@ -51,12 +56,29 @@ const FAKE_CARDS = [
   },
 ];
 
+function toArrayBuffer(buffer) {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+// responsesByUrl values are either a plain object (served as JSON, for the
+// bulk-data listing endpoint) or a Buffer (served as raw bytes, for the
+// actual card-data download). A real fetch() Response supports both
+// json() and arrayBuffer() regardless of content type, so the mock does
+// too - production code always calls arrayBuffer() on the card download,
+// whether or not that download happens to be gzipped.
 function withMockedFetch(responsesByUrl, fn) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const body = responsesByUrl[url];
-    if (!body) throw new Error(`Unexpected fetch to ${url} in test`);
-    return { ok: true, status: 200, statusText: "OK", json: async () => body };
+    if (body === undefined) throw new Error(`Unexpected fetch to ${url} in test`);
+    const buffer = Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => JSON.parse(buffer.toString("utf8")),
+      arrayBuffer: async () => toArrayBuffer(buffer),
+    };
   };
   return fn().finally(() => {
     globalThis.fetch = originalFetch;
@@ -72,12 +94,16 @@ function withSavedCacheFile(fn) {
   });
 }
 
-test("ensureCardCache downloads, filters to arena-only cards, and caches them", async () => {
+function toGzippedJsonl(cards) {
+  return zlib.gzipSync(cards.map((c) => JSON.stringify(c)).join("\n"));
+}
+
+test("ensureCardCache downloads gzipped JSONL, filters to arena-only cards, and caches them", async () => {
   await withSavedCacheFile(() =>
     withMockedFetch(
       {
         "https://api.scryfall.com/bulk-data": FAKE_BULK_LISTING,
-        "https://example.invalid/default-cards.json": FAKE_CARDS,
+        "https://example.invalid/default-cards.jsonl.gz": toGzippedJsonl(FAKE_CARDS),
       },
       async () => {
         await ensureCardCache({ force: true });
@@ -98,6 +124,38 @@ test("ensureCardCache downloads, filters to arena-only cards, and caches them", 
         assert.equal(bolt.imageUrl, "https://example.invalid/bolt.jpg");
       }
     )
+  );
+});
+
+test("ensureCardCache falls back to the legacy plain-JSON download_uri when jsonl_download_uri is absent", async () => {
+  const legacyListing = {
+    object: "list",
+    data: [{ type: "default_cards", download_uri: "https://example.invalid/default-cards-legacy.json" }],
+  };
+  await withSavedCacheFile(() =>
+    withMockedFetch(
+      {
+        "https://api.scryfall.com/bulk-data": legacyListing,
+        "https://example.invalid/default-cards-legacy.json": FAKE_CARDS,
+      },
+      async () => {
+        // Legacy download_uri responses are served as plain JSON, not
+        // gzipped bytes - the mock's json() branch models that directly.
+        await ensureCardCache({ force: true });
+        const cardDb = loadCardDb();
+        assert.equal(cardDb.size, 1);
+        assert.equal(cardDb.get(12345).name, "Lightning Bolt");
+      }
+    )
+  );
+});
+
+test("ensureCardCache throws a clear error when the default_cards entry has neither download URI field", async () => {
+  const brokenListing = { object: "list", data: [{ type: "default_cards" }] };
+  await withSavedCacheFile(() =>
+    withMockedFetch({ "https://api.scryfall.com/bulk-data": brokenListing }, async () => {
+      await assert.rejects(() => ensureCardCache({ force: true }), /no download URI/);
+    })
   );
 });
 

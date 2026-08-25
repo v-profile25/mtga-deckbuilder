@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,42 @@ function slimCard(card) {
   };
 }
 
+function isGzip(buffer) {
+  return buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+}
+
+// Scryfall retired the plain-JSON bulk download (the "download_uri" field)
+// on 2026-07-20 in favor of "jsonl_download_uri" - a gzipped file of one
+// JSON object per line, rather than one big JSON array. Prefer the new
+// field but fall back to the old one/format in case it ever reappears,
+// and detect gzip by magic bytes rather than trusting the URL/headers.
+async function fetchBulkCards(defaultCards) {
+  const downloadUri = defaultCards.jsonl_download_uri || defaultCards.download_uri;
+  if (!downloadUri) {
+    throw new Error(
+      "Scryfall's 'default_cards' bulk-data entry has no download URI (checked jsonl_download_uri and download_uri)."
+    );
+  }
+
+  const cardsRes = await fetch(downloadUri, { headers: { "User-Agent": USER_AGENT } });
+  if (!cardsRes.ok) {
+    throw new Error(`Scryfall bulk card download failed: ${cardsRes.status} ${cardsRes.statusText}`);
+  }
+
+  const bytes = Buffer.from(await cardsRes.arrayBuffer());
+  const raw = isGzip(bytes) ? zlib.gunzipSync(bytes) : bytes;
+  const text = raw.toString("utf8");
+
+  if (downloadUri.includes(".jsonl")) {
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  }
+  return JSON.parse(text);
+}
+
 /**
  * Downloads Scryfall's "default_cards" bulk file (all printings) and
  * caches a filtered-down version (only cards with an arena_id, i.e.
@@ -49,14 +86,7 @@ export async function ensureCardCache({ force = false } = {}) {
   const defaultCards = bulkList.data.find((d) => d.type === "default_cards");
   if (!defaultCards) throw new Error("Scryfall bulk-data response missing 'default_cards' entry");
 
-  const cardsRes = await fetch(defaultCards.download_uri, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-  });
-  if (!cardsRes.ok) {
-    throw new Error(`Scryfall bulk card download failed: ${cardsRes.status} ${cardsRes.statusText}`);
-  }
-  const allCards = await cardsRes.json();
-
+  const allCards = await fetchBulkCards(defaultCards);
   const arenaCards = allCards.filter((c) => typeof c.arena_id === "number").map(slimCard);
 
   fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
