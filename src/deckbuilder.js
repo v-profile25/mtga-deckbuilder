@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { lookupOwnedCount } from "./collectionImport.js";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const MAX_CANDIDATES = 800;
@@ -19,7 +20,7 @@ function buildCandidatePool(cardDb, collection, format) {
   for (const card of cardDb.values()) {
     if (card.legalities?.[legalityKey] !== "legal") continue;
     if (card.typeLine?.includes("Basic Land")) continue; // always available, no need to list
-    const count = collection[card.arenaId] ?? collection[String(card.arenaId)] ?? 0;
+    const count = lookupOwnedCount(collection, card);
     (count > 0 ? owned : unowned).push({ ...card, owned: count });
   }
 

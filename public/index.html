@@ -20,12 +20,12 @@
         <span id="cardsStatus" class="status"></span>
       </div>
       <div class="row">
-        <button id="syncCollection">Sync my collection (Player.log)</button>
         <span id="collectionStatus" class="status"></span>
       </div>
+      <label for="collectionText">Paste your collection (one card per line - see README for accepted formats)</label>
+      <textarea id="collectionText" rows="6" placeholder="4 Lightning Bolt&#10;2 Counterspell (MOM) 52&#10;Wrath of God,1"></textarea>
       <div class="row">
-        <label for="logPath">Custom log path (optional)</label>
-        <input id="logPath" type="text" placeholder="leave blank to auto-detect" />
+        <button id="importCollection">Import collection</button>
       </div>
     </section>
 

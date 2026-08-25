@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { findDefaultLogPath, loadCollectionFromFile } from "./src/logParser.js";
+import { parseCollectionText } from "./src/collectionImport.js";
 import { ensureCardCache, loadCardDb, cacheExists, cacheStat } from "./src/scryfall.js";
 import { generateDeck } from "./src/deckbuilder.js";
 import { computeCraftCost } from "./src/craft.js";
@@ -25,22 +25,25 @@ function loadStoredCollection() {
 
 app.get("/api/collection", (req, res) => {
   const collection = loadStoredCollection();
-  if (!collection) return res.status(404).json({ error: "No collection synced yet." });
+  if (!collection) return res.status(404).json({ error: "No collection imported yet." });
   res.json({ cardCount: Object.keys(collection).length, collection });
 });
 
-app.post("/api/collection/sync", (req, res) => {
+app.post("/api/collection/import", (req, res) => {
   try {
-    const logPath = req.body?.logPath || findDefaultLogPath();
-    if (!logPath) {
+    const text = req.body?.text;
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "Missing 'text' string in request body." });
+    }
+    const collection = parseCollectionText(text);
+    if (Object.keys(collection).length === 0) {
       return res.status(400).json({
         error:
-          "Couldn't find Player.log at the default location for this OS. Pass an explicit { logPath } in the request body.",
+          "Couldn't find any '<count> <card name>' lines in that text. See the README for accepted formats.",
       });
     }
-    const collection = loadCollectionFromFile(logPath);
     fs.writeFileSync(COLLECTION_PATH, JSON.stringify(collection), "utf8");
-    res.json({ ok: true, logPath, cardCount: Object.keys(collection).length });
+    res.json({ ok: true, cardCount: Object.keys(collection).length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -70,7 +73,7 @@ app.post("/api/deck/generate", async (req, res) => {
     }
     const collection = loadStoredCollection();
     if (!collection) {
-      return res.status(400).json({ error: "Collection not synced yet. POST /api/collection/sync first." });
+      return res.status(400).json({ error: "Collection not imported yet. POST /api/collection/import first." });
     }
 
     const cardDb = loadCardDb();

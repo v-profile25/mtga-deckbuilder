@@ -29,9 +29,9 @@ async function refreshCardsStatus() {
 async function refreshCollectionStatus() {
   try {
     const data = await api("GET", "/api/collection");
-    $("collectionStatus").textContent = `synced (${data.cardCount} unique cards)`;
+    $("collectionStatus").textContent = `imported (${data.cardCount} unique cards)`;
   } catch {
-    $("collectionStatus").textContent = "not synced yet";
+    $("collectionStatus").textContent = "not imported yet";
   }
 }
 
@@ -49,17 +49,21 @@ $("syncCards").addEventListener("click", async () => {
   }
 });
 
-$("syncCollection").addEventListener("click", async () => {
+$("importCollection").addEventListener("click", async () => {
   clearError();
-  $("syncCollection").disabled = true;
+  const text = $("collectionText").value;
+  if (!text.trim()) {
+    showError("Paste your collection list first.");
+    return;
+  }
+  $("importCollection").disabled = true;
   try {
-    const logPath = $("logPath").value.trim();
-    await api("POST", "/api/collection/sync", logPath ? { logPath } : {});
+    await api("POST", "/api/collection/import", { text });
     await refreshCollectionStatus();
   } catch (err) {
     showError(err.message);
   } finally {
-    $("syncCollection").disabled = false;
+    $("importCollection").disabled = false;
   }
 });
 

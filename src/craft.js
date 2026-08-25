@@ -1,8 +1,10 @@
+import { lookupOwnedCount } from "./collectionImport.js";
+
 const RARITIES = ["common", "uncommon", "rare", "mythic"];
 
 /**
  * Given a decklist [{ arenaId, count }], the owned collection
- * { [arenaId]: ownedCount }, and the card db (Map<arenaId, card>),
+ * { [normalizedCardName]: ownedCount }, and the card db (Map<arenaId, card>),
  * returns what's missing and how many wildcards of each rarity it costs.
  * Basic lands are free to add in Arena and are excluded from craft costs.
  */
@@ -15,7 +17,7 @@ export function computeCraftCost(decklist, collection, cardDb) {
     if (!card) continue;
     if (card.typeLine?.includes("Basic Land")) continue;
 
-    const owned = collection[arenaId] ?? collection[String(arenaId)] ?? 0;
+    const owned = lookupOwnedCount(collection, card);
     const need = Math.max(0, count - owned);
     if (need <= 0) continue;
 
