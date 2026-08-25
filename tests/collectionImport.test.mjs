@@ -33,6 +33,26 @@ test("parseCollectionText skips blank lines and lines it can't parse (e.g. a CSV
   assert.deepEqual(collection, { "lightning bolt": 4 });
 });
 
+test("parseCollectionText handles a real semicolon-delimited exporter format (Count;Name;Edition;Collector Number;Rarity)", () => {
+  const csv = [
+    "Count;Name;Edition;Collector Number;Rarity",
+    "1;Settle the Wreckage;xln;34;rare",
+    "4;Spell Pierce;xln;81;common",
+    "3;Shock;anb;84;common",
+  ].join("\n");
+  const collection = parseCollectionText(csv);
+  assert.deepEqual(collection, {
+    "settle the wreckage": 1,
+    "spell pierce": 4,
+    shock: 3,
+  });
+});
+
+test("parseCollectionText handles semicolon CSV even for card names containing a literal comma", () => {
+  const collection = parseCollectionText("1;Teferi, Hero of Dominaria;dom;207;mythic");
+  assert.deepEqual(collection, { "teferi, hero of dominaria": 1 });
+});
+
 test("parseCollectionText ignores zero/negative counts", () => {
   const collection = parseCollectionText("0 Lightning Bolt\n4 Counterspell");
   assert.deepEqual(collection, { counterspell: 4 });
