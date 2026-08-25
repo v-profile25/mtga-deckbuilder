@@ -73,3 +73,35 @@ export function checkDeckLegality(deck, format) {
   }
   return { valid: issues.length === 0, issues };
 }
+
+// A land count this low can't be mechanically "fixed" (which lands to add
+// is a real deckbuilding decision), but it's a clear sign the deck won't
+// actually function, so it's worth flagging rather than shipping quietly.
+// Real constructed decks run roughly 16-18 out of 60 (~40%); even a very
+// aggressive low-curve deck rarely goes below ~14.
+const MIN_REASONABLE_LANDS = 14;
+
+/**
+ * Counts lands in the mainboard (basic lands via the arenaId:0 sentinel,
+ * plus any nonbasic land looked up by arenaId in cardDb) and warns if
+ * the total looks too low to actually cast the rest of the deck.
+ */
+export function checkManaBase(mainboard, cardDb) {
+  let landCount = 0;
+  for (const entry of mainboard || []) {
+    if (entry.arenaId === 0) {
+      landCount += entry.count;
+      continue;
+    }
+    if (cardDb.get(entry.arenaId)?.typeLine?.includes("Land")) {
+      landCount += entry.count;
+    }
+  }
+
+  if (landCount < MIN_REASONABLE_LANDS) {
+    return [
+      `Only ${landCount} land${landCount === 1 ? "" : "s"} in the mainboard - constructed decks typically need 16-18 for consistent mana. This deck likely can't reliably cast its spells as built.`,
+    ];
+  }
+  return [];
+}

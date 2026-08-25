@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { clampCopyLimits, checkDeckLegality } from "../src/deckRules.js";
+import { clampCopyLimits, checkDeckLegality, checkManaBase } from "../src/deckRules.js";
 
 test("clampCopyLimits trims a mainboard entry over the format's copy limit", () => {
   const mainboard = [{ arenaId: 1, name: "Lightning Bolt", count: 6 }];
@@ -81,4 +81,37 @@ test("checkDeckLegality uses the 100-card requirement for brawl", () => {
   const { valid, issues } = checkDeckLegality(deck, "brawl");
   assert.equal(valid, false);
   assert.match(issues[0], /exactly 100/);
+});
+
+const cardDb = new Map([
+  [1, { name: "Lightning Bolt", typeLine: "Instant" }],
+  [2, { name: "Field of Ruin", typeLine: "Land" }],
+]);
+
+test("checkManaBase warns when a deck has far too few lands (the actual bug reported)", () => {
+  const mainboard = [
+    { arenaId: 0, name: "Mountain", count: 4 },
+    { arenaId: 1, name: "Lightning Bolt", count: 56 },
+  ];
+  const issues = checkManaBase(mainboard, cardDb);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /Only 4 lands/);
+});
+
+test("checkManaBase counts both basic lands (arenaId 0) and nonbasic lands found via cardDb", () => {
+  const mainboard = [
+    { arenaId: 0, name: "Mountain", count: 10 },
+    { arenaId: 2, name: "Field of Ruin", count: 4 },
+    { arenaId: 1, name: "Lightning Bolt", count: 46 },
+  ];
+  const issues = checkManaBase(mainboard, cardDb);
+  assert.deepEqual(issues, [], "10 basics + 4 nonbasic lands = 14, meeting the minimum");
+});
+
+test("checkManaBase passes a normal, healthy land count without warning", () => {
+  const mainboard = [
+    { arenaId: 0, name: "Mountain", count: 17 },
+    { arenaId: 1, name: "Lightning Bolt", count: 43 },
+  ];
+  assert.deepEqual(checkManaBase(mainboard, cardDb), []);
 });
