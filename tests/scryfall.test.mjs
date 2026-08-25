@@ -5,7 +5,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
-import { ensureCardCache, loadCardDb, cacheExists, cacheStat } from "../src/scryfall.js";
+import { ensureCardCache, loadCardDb, cacheExists, cacheStat, iterLines } from "../src/scryfall.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, "..", "data", "scryfall-cache.json");
@@ -97,6 +97,38 @@ function withSavedCacheFile(fn) {
 function toGzippedJsonl(cards) {
   return zlib.gzipSync(cards.map((c) => JSON.stringify(c)).join("\n"));
 }
+
+test("iterLines decodes every line of a multi-megabyte buffer without dropping or truncating any (regression for the V8 string-length limit)", () => {
+  // Scryfall's real default_cards file, decompressed, is large enough to
+  // exceed V8's ~512MB single-string limit ("Cannot create a string
+  // longer than 0x1fffffe8 characters") if decoded all at once via
+  // buffer.toString(). Allocating that much in a test is impractical, but
+  // the fix is that iterLines never decodes more than one line at a time
+  // regardless of total buffer size - this checks that holds correctly
+  // at a smaller multi-megabyte scale, including a non-ASCII line (Aether
+  // Vial-style card names contain accented characters) and no trailing
+  // newline on the final line.
+  const lineCount = 50_000;
+  const lines = [];
+  for (let i = 0; i < lineCount; i++) {
+    lines.push(`{"i":${i},"name":"Card ${i} — Æther Vial"}`);
+  }
+  const buffer = Buffer.from(lines.join("\n"), "utf8");
+  assert.ok(buffer.length > 1_000_000, "fixture should be at least a megabyte to be meaningful");
+
+  const decoded = [...iterLines(buffer)];
+  assert.equal(decoded.length, lineCount);
+  assert.equal(decoded[0], lines[0]);
+  assert.equal(decoded[lineCount - 1], lines[lineCount - 1]);
+  assert.deepEqual(JSON.parse(decoded[123]), { i: 123, name: "Card 123 — Æther Vial" });
+});
+
+test("iterLines handles a trailing newline without yielding a trailing empty line as meaningfully different", () => {
+  const withTrailingNewline = [...iterLines(Buffer.from("a\nb\n", "utf8"))];
+  const withoutTrailingNewline = [...iterLines(Buffer.from("a\nb", "utf8"))];
+  assert.deepEqual(withTrailingNewline, ["a", "b"]);
+  assert.deepEqual(withoutTrailingNewline, ["a", "b"]);
+});
 
 test("ensureCardCache downloads gzipped JSONL, filters to arena-only cards, and caches them", async () => {
   await withSavedCacheFile(() =>

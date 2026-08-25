@@ -35,12 +35,31 @@ function isGzip(buffer) {
   return buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
 }
 
+// Decodes and yields each line of a (possibly huge) buffer of newline-
+// delimited text, decoding one line at a time instead of converting the
+// whole buffer to a single JS string first - decompressed, the full
+// default_cards file (every printing of every card, not just Arena's)
+// is large enough to exceed V8's ~512MB string length limit, even though
+// Buffers themselves have no such limit.
+export function* iterLines(buffer) {
+  let start = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    if (buffer[i] === 0x0a) {
+      yield buffer.toString("utf8", start, i);
+      start = i + 1;
+    }
+  }
+  if (start < buffer.length) yield buffer.toString("utf8", start, buffer.length);
+}
+
 // Scryfall retired the plain-JSON bulk download (the "download_uri" field)
 // on 2026-07-20 in favor of "jsonl_download_uri" - a gzipped file of one
 // JSON object per line, rather than one big JSON array. Prefer the new
 // field but fall back to the old one/format in case it ever reappears,
 // and detect gzip by magic bytes rather than trusting the URL/headers.
-async function fetchBulkCards(defaultCards) {
+// Filters down to Arena-legal cards (and slims each one) as it goes,
+// rather than materializing every printing of every card at once.
+async function fetchArenaCards(defaultCards) {
   const downloadUri = defaultCards.jsonl_download_uri || defaultCards.download_uri;
   if (!downloadUri) {
     throw new Error(
@@ -55,16 +74,25 @@ async function fetchBulkCards(defaultCards) {
 
   const bytes = Buffer.from(await cardsRes.arrayBuffer());
   const raw = isGzip(bytes) ? zlib.gunzipSync(bytes) : bytes;
-  const text = raw.toString("utf8");
 
+  const arenaCards = [];
   if (downloadUri.includes(".jsonl")) {
-    return text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
+    for (const line of iterLines(raw)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const card = JSON.parse(trimmed);
+      if (typeof card.arena_id === "number") arenaCards.push(slimCard(card));
+    }
+  } else {
+    // Legacy plain-JSON-array fallback - not expected to be gzipped or
+    // large enough to hit the string limit like the current format, so a
+    // single parse is fine here.
+    const allCards = JSON.parse(raw.toString("utf8"));
+    for (const card of allCards) {
+      if (typeof card.arena_id === "number") arenaCards.push(slimCard(card));
+    }
   }
-  return JSON.parse(text);
+  return arenaCards;
 }
 
 /**
@@ -86,8 +114,7 @@ export async function ensureCardCache({ force = false } = {}) {
   const defaultCards = bulkList.data.find((d) => d.type === "default_cards");
   if (!defaultCards) throw new Error("Scryfall bulk-data response missing 'default_cards' entry");
 
-  const allCards = await fetchBulkCards(defaultCards);
-  const arenaCards = allCards.filter((c) => typeof c.arena_id === "number").map(slimCard);
+  const arenaCards = await fetchArenaCards(defaultCards);
 
   fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
   fs.writeFileSync(CACHE_PATH, JSON.stringify(arenaCards), "utf8");
