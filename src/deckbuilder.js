@@ -40,6 +40,12 @@ function candidatesToPromptLines(candidates) {
     .join("\n");
 }
 
+function preview(text, length = 400) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return "(empty response)";
+  return trimmed.length > length ? `${trimmed.slice(0, length)}…` : trimmed;
+}
+
 // A card's reasoning/oracle text routinely contains literal { } characters
 // (mana symbols like {T}, {2/W}), so brace-matching has to ignore braces
 // that appear inside JSON string values rather than just counting them.
@@ -47,7 +53,9 @@ export function extractJsonBlock(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : text;
   const start = candidate.indexOf("{");
-  if (start === -1) throw new Error("No JSON object found in model response");
+  if (start === -1) {
+    throw new Error(`No JSON object found in model response. It said: ${preview(text)}`);
+  }
 
   let depth = 0;
   let inString = false;
@@ -69,7 +77,7 @@ export function extractJsonBlock(text) {
       if (depth === 0) return JSON.parse(candidate.slice(start, i + 1));
     }
   }
-  throw new Error("Unbalanced JSON object in model response");
+  throw new Error(`Unbalanced JSON object in model response (likely truncated). It said: ${preview(text)}`);
 }
 
 // Claude is instructed to only use arenaIds from the candidate list, but
@@ -109,7 +117,9 @@ Strongly prefer cards the player already owns. You may include a modest number o
 improve the deck, and list those separately as suggestedCrafts with a one-line reason each. \
 Only use arenaId values that appear in the candidate list. Basic lands are not in the list because they're \
 always free to add in Arena - include them in the mainboard by name only, with a made-up arenaId of 0. \
-Respond with ONLY a single JSON object, no prose outside it, shaped exactly like:
+Put all of your deckbuilding explanation in the "reasoning" field of the JSON below - do not write any \
+text, greeting, or commentary before or after the JSON object. The very first character of your response \
+must be '{' and the very last character must be '}'. Respond with ONLY that single JSON object, shaped exactly like:
 {
   "deckName": string,
   "colors": string[],
@@ -124,13 +134,18 @@ Respond with ONLY a single JSON object, no prose outside it, shaped exactly like
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     system,
     messages: [{ role: "user", content: user }],
   });
 
   const text = response.content.map((block) => (block.type === "text" ? block.text : "")).join("");
-  const deck = extractJsonBlock(text);
+  let deck;
+  try {
+    deck = extractJsonBlock(text);
+  } catch (err) {
+    throw new Error(`${err.message} (stop_reason: ${response.stop_reason})`);
+  }
 
   const validArenaIds = new Set(candidates.map((c) => c.arenaId));
   deck.mainboard = filterKnownCards(deck.mainboard, validArenaIds);

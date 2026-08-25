@@ -35,6 +35,17 @@ test("extractJsonBlock throws when there's no JSON object in the response", () =
   assert.throws(() => extractJsonBlock("Sorry, I can't build that deck."), /No JSON object found/);
 });
 
+test("extractJsonBlock's error includes what the model actually said, for diagnosing failures", () => {
+  assert.throws(
+    () => extractJsonBlock("I'd be happy to help, but I need more details about your collection first."),
+    /I'd be happy to help/
+  );
+});
+
+test("extractJsonBlock reports '(empty response)' rather than a blank preview when there's no text at all", () => {
+  assert.throws(() => extractJsonBlock(""), /\(empty response\)/);
+});
+
 test("extractJsonBlock throws on truncated/unbalanced JSON (e.g. hit max_tokens)", () => {
   const text = `{"deckName": "Mono Red", "mainboard": [{"arenaId": 1, "name": "Mountain"`;
   assert.throws(() => extractJsonBlock(text), /Unbalanced JSON object/);
