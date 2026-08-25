@@ -39,20 +39,45 @@ function candidatesToPromptLines(candidates) {
     .join("\n");
 }
 
-function extractJsonBlock(text) {
+// A card's reasoning/oracle text routinely contains literal { } characters
+// (mana symbols like {T}, {2/W}), so brace-matching has to ignore braces
+// that appear inside JSON string values rather than just counting them.
+export function extractJsonBlock(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : text;
   const start = candidate.indexOf("{");
   if (start === -1) throw new Error("No JSON object found in model response");
+
   let depth = 0;
+  let inString = false;
+  let escaped = false;
   for (let i = start; i < candidate.length; i++) {
-    if (candidate[i] === "{") depth++;
-    else if (candidate[i] === "}") {
+    const ch = candidate[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
       depth--;
       if (depth === 0) return JSON.parse(candidate.slice(start, i + 1));
     }
   }
   throw new Error("Unbalanced JSON object in model response");
+}
+
+// Claude is instructed to only use arenaIds from the candidate list, but
+// nothing stops it from hallucinating one anyway - drop anything that
+// isn't a known candidate (arenaId 0 is the sentinel for basic lands,
+// which are deliberately excluded from the candidate list).
+export function filterKnownCards(entries, validArenaIds) {
+  if (!Array.isArray(entries)) return entries;
+  return entries.filter((e) => e && (e.arenaId === 0 || validArenaIds.has(e.arenaId)));
 }
 
 /**
@@ -104,5 +129,12 @@ Respond with ONLY a single JSON object, no prose outside it, shaped exactly like
   });
 
   const text = response.content.map((block) => (block.type === "text" ? block.text : "")).join("");
-  return extractJsonBlock(text);
+  const deck = extractJsonBlock(text);
+
+  const validArenaIds = new Set(candidates.map((c) => c.arenaId));
+  deck.mainboard = filterKnownCards(deck.mainboard, validArenaIds);
+  deck.sideboard = filterKnownCards(deck.sideboard, validArenaIds);
+  deck.suggestedCrafts = filterKnownCards(deck.suggestedCrafts, validArenaIds);
+
+  return deck;
 }
