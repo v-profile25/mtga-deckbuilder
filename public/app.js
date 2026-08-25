@@ -130,6 +130,14 @@ $("generate").addEventListener("click", async () => {
     renderDecklist($("mainboard"), deck.mainboard);
     renderDecklist($("sideboard"), deck.sideboard);
 
+    const legalityMessages = [...(deck.legality?.fixes || []), ...(deck.legality?.issues || [])];
+    if (legalityMessages.length > 0) {
+      $("legalityMessages").innerHTML = legalityMessages.map((m) => `<li>${m}</li>`).join("");
+      $("legality").classList.remove("hidden");
+    } else {
+      $("legality").classList.add("hidden");
+    }
+
     const { common, uncommon, rare, mythic } = craftCost.wildcardsNeeded;
     $("wildcardSummary").textContent =
       `Wildcards needed: ${common} common, ${uncommon} uncommon, ${rare} rare, ${mythic} mythic.`;

@@ -112,3 +112,17 @@ textarea { width: 100%; resize: vertical; }
   white-space: pre-wrap;
 }
 
+.warning {
+  background: #332a12;
+  border: 1px solid #6b5423;
+  color: #f0c674;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.warning ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+}
+
