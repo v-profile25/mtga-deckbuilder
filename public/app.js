@@ -49,22 +49,37 @@ $("syncCards").addEventListener("click", async () => {
   }
 });
 
-$("importCollection").addEventListener("click", async () => {
+async function importCollectionText(text, button) {
   clearError();
-  const text = $("collectionText").value;
   if (!text.trim()) {
-    showError("Paste your collection list first.");
+    showError("That collection text is empty.");
     return;
   }
-  $("importCollection").disabled = true;
+  button.disabled = true;
   try {
     await api("POST", "/api/collection/import", { text });
     await refreshCollectionStatus();
   } catch (err) {
     showError(err.message);
   } finally {
-    $("importCollection").disabled = false;
+    button.disabled = false;
   }
+}
+
+$("importCollection").addEventListener("click", () => {
+  importCollectionText($("collectionText").value, $("importCollection"));
+});
+
+$("importCollectionFile").addEventListener("click", () => {
+  $("collectionFileInput").click();
+});
+
+$("collectionFileInput").addEventListener("change", async () => {
+  const file = $("collectionFileInput").files[0];
+  if (!file) return;
+  const text = await file.text();
+  await importCollectionText(text, $("importCollectionFile"));
+  $("collectionFileInput").value = ""; // allow re-selecting the same file later
 });
 
 function renderDecklist(el, entries) {

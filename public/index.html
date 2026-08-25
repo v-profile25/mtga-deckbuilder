@@ -22,10 +22,15 @@
       <div class="row">
         <span id="collectionStatus" class="status"></span>
       </div>
-      <label for="collectionText">Paste your collection (one card per line - see README for accepted formats)</label>
+      <div class="row">
+        <button id="importCollectionFile">Import collection from file</button>
+        <input id="collectionFileInput" type="file" accept=".csv,.txt" class="hidden" />
+      </div>
+
+      <label for="collectionText">...or paste your collection (one card per line - see README for accepted formats)</label>
       <textarea id="collectionText" rows="6" placeholder="4 Lightning Bolt&#10;2 Counterspell (MOM) 52&#10;Wrath of God,1"></textarea>
       <div class="row">
-        <button id="importCollection">Import collection</button>
+        <button id="importCollection">Import pasted collection</button>
       </div>
     </section>
 
