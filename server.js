@@ -7,6 +7,7 @@ import { parseCollectionText } from "./src/collectionImport.js";
 import { ensureCardCache, loadCardDb, cacheExists, cacheStat } from "./src/scryfall.js";
 import { generateDeck } from "./src/deckbuilder.js";
 import { computeCraftCost } from "./src/craft.js";
+import { formatArenaImport } from "./src/deckExport.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
@@ -86,7 +87,8 @@ app.post("/api/deck/generate", async (req, res) => {
     });
 
     const craftCost = computeCraftCost(deck.mainboard || [], collection, cardDb);
-    res.json({ deck, craftCost });
+    const arenaImport = formatArenaImport(deck.mainboard, deck.sideboard);
+    res.json({ deck, craftCost, arenaImport });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

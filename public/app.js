@@ -121,10 +121,12 @@ $("generate").addEventListener("click", async () => {
   $("generate").disabled = true;
   $("generate").textContent = "Generating...";
   try {
-    const { deck, craftCost } = await api("POST", "/api/deck/generate", { description, format });
+    const { deck, craftCost, arenaImport } = await api("POST", "/api/deck/generate", { description, format });
 
     $("deckName").textContent = `${deck.deckName} (${(deck.colors || []).join("")}) — ${deck.archetype || ""}`;
     $("reasoning").textContent = deck.reasoning || "";
+    $("arenaImport").value = arenaImport || "";
+    $("copyStatus").textContent = "";
     renderDecklist($("mainboard"), deck.mainboard);
     renderDecklist($("sideboard"), deck.sideboard);
 
@@ -140,6 +142,16 @@ $("generate").addEventListener("click", async () => {
   } finally {
     $("generate").disabled = false;
     $("generate").textContent = "Generate deck";
+  }
+});
+
+$("copyArenaImport").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("arenaImport").value);
+    $("copyStatus").textContent = "Copied!";
+  } catch {
+    $("arenaImport").select();
+    $("copyStatus").textContent = "Couldn't auto-copy - text is selected, press Ctrl/Cmd+C.";
   }
 });
 
