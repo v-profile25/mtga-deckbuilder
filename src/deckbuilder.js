@@ -135,6 +135,13 @@ must be '{' and the very last character must be '}'. Respond with ONLY that sing
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 8192,
+    // Claude Sonnet 5 runs adaptive thinking by default when this is
+    // omitted. That invisible thinking content (never surfaced - only
+    // "text" blocks are read below) was eating the entire token budget,
+    // leaving nothing for the actual JSON. This task doesn't need visible
+    // step-by-step reasoning - the "reasoning" field in the JSON schema
+    // below covers that - so thinking is switched off entirely.
+    thinking: { type: "disabled" },
     system,
     messages: [{ role: "user", content: user }],
   });
