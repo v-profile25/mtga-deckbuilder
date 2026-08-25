@@ -1,0 +1,16 @@
+{
+  "name": "mtga-deckbuilder",
+  "version": "0.1.0",
+  "description": "Local web app: reads your MTG Arena collection from Player.log, and turns a natural-language deck request into a buildable/craftable deck using your real collection + Scryfall data.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "express": "^4.21.1"
+  }
+}

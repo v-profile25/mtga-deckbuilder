@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MTGA Deckbuilder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>MTGA Deckbuilder</h1>
+    <p class="subtitle">Describe a deck. It's built from cards you actually own.</p>
+  </header>
+
+  <main>
+    <section id="setup" class="panel">
+      <h2>1. Setup</h2>
+      <div class="row">
+        <button id="syncCards">Sync card database (Scryfall)</button>
+        <span id="cardsStatus" class="status"></span>
+      </div>
+      <div class="row">
+        <button id="syncCollection">Sync my collection (Player.log)</button>
+        <span id="collectionStatus" class="status"></span>
+      </div>
+      <div class="row">
+        <label for="logPath">Custom log path (optional)</label>
+        <input id="logPath" type="text" placeholder="leave blank to auto-detect" />
+      </div>
+    </section>
+
+    <section id="build" class="panel">
+      <h2>2. Describe your deck</h2>
+      <div class="row">
+        <label for="format">Format</label>
+        <select id="format">
+          <option value="standard">Standard</option>
+          <option value="historic">Historic</option>
+          <option value="explorer">Explorer</option>
+          <option value="alchemy">Alchemy</option>
+          <option value="brawl">Brawl</option>
+        </select>
+      </div>
+      <textarea id="description" rows="4" placeholder="e.g. Mono red aggro that wants to curve out and burn the opponent's face by turn 6"></textarea>
+      <button id="generate">Generate deck</button>
+    </section>
+
+    <section id="result" class="panel hidden">
+      <h2 id="deckName"></h2>
+      <p id="reasoning" class="reasoning"></p>
+
+      <div class="columns">
+        <div>
+          <h3>Mainboard</h3>
+          <ul id="mainboard" class="decklist"></ul>
+        </div>
+        <div>
+          <h3>Sideboard</h3>
+          <ul id="sideboard" class="decklist"></ul>
+        </div>
+      </div>
+
+      <h3>Craft cost</h3>
+      <p id="wildcardSummary"></p>
+      <ul id="missingList" class="decklist"></ul>
+
+      <h3>Suggested crafts (beyond what's owned)</h3>
+      <ul id="suggestedCrafts" class="decklist"></ul>
+    </section>
+
+    <p id="error" class="error hidden"></p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
