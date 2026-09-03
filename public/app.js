@@ -40,7 +40,7 @@ $("syncCards").addEventListener("click", async () => {
   $("syncCards").disabled = true;
   $("cardsStatus").textContent = "downloading Scryfall bulk data, this can take a minute...";
   try {
-    await api("POST", "/api/cards/sync", {});
+    await api("POST", "/api/cards/sync", { force: true });
     await refreshCardsStatus();
   } catch (err) {
     showError(err.message);
