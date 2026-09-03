@@ -165,21 +165,25 @@ Respond with ONLY that single JSON object, shaped exactly like:
 
   const user = `Format: ${format}\nRequest: ${description}\n\nCandidate cards:\n${candidateText}`;
 
-  const response = await client.messages.create({
+  // Deckbuilding needs real arithmetic (land count, curve, copy limits) and
+  // strategic reasoning (synergy, game plan), not just pattern completion -
+  // thinking was previously disabled to work around an empty-response bug
+  // (it was exhausting a too-small max_tokens before any text came out),
+  // but that also removed the model's scratchpad for getting this right,
+  // which produced decks with absurdly few lands and no coherent plan.
+  // Re-enabled with real headroom instead: 16000 wasn't enough once
+  // thinking was back on (a real, well-formed deck got cut off mid-list),
+  // so this raises the ceiling further and switches to streaming, since
+  // the SDK requires streaming at this max_tokens to avoid HTTP timeouts.
+  const stream = client.messages.stream({
     model: MODEL,
-    // Deckbuilding needs real arithmetic (land count, curve, copy limits)
-    // and strategic reasoning (synergy, game plan), not just pattern
-    // completion - thinking was previously disabled to work around an
-    // empty-response bug (it was exhausting a too-small max_tokens before
-    // any text came out), but that also removed the model's scratchpad
-    // for getting this right, which produced decks with absurdly few
-    // lands and no coherent plan. Re-enabled with real headroom instead.
-    max_tokens: 16000,
+    max_tokens: 32000,
     thinking: { type: "adaptive" },
     output_config: { effort: "high" },
     system,
     messages: [{ role: "user", content: user }],
   });
+  const response = await stream.finalMessage();
 
   const text = response.content.map((block) => (block.type === "text" ? block.text : "")).join("");
   let deck;
