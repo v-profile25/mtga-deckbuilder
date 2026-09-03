@@ -105,3 +105,20 @@ export function checkManaBase(mainboard, cardDb) {
   }
   return [];
 }
+
+/**
+ * Checks the mythic+rare wildcard cost (from computeCraftCost's
+ * wildcardsNeeded) against a player-set budget. Which specific unowned
+ * cards to cut to get under budget is a real deckbuilding decision, not
+ * something to auto-fix, so this only flags an overrun - same pattern as
+ * checkDeckLegality/checkManaBase. maxRareMythicWildcards of null/undefined
+ * means no budget was set (nothing to check).
+ */
+export function checkWildcardBudget(wildcardsNeeded, maxRareMythicWildcards) {
+  if (maxRareMythicWildcards == null) return [];
+  const needed = (wildcardsNeeded.mythic || 0) + (wildcardsNeeded.rare || 0);
+  if (needed > maxRareMythicWildcards) {
+    return [`Needs ${needed} mythic/rare wildcards, over your budget of ${maxRareMythicWildcards}.`];
+  }
+  return [];
+}

@@ -117,11 +117,17 @@ $("generate").addEventListener("click", async () => {
     showError("Describe the deck you want first.");
     return;
   }
+  const maxWildcardsValue = $("maxWildcards").value.trim();
+  const maxRareMythicWildcards = maxWildcardsValue === "" ? undefined : Number(maxWildcardsValue);
 
   $("generate").disabled = true;
   $("generate").textContent = "Generating...";
   try {
-    const { deck, craftCost, arenaImport } = await api("POST", "/api/deck/generate", { description, format });
+    const { deck, craftCost, arenaImport } = await api("POST", "/api/deck/generate", {
+      description,
+      format,
+      maxRareMythicWildcards,
+    });
 
     $("deckName").textContent = `${deck.deckName} (${(deck.colors || []).join("")}) — ${deck.archetype || ""}`;
     $("reasoning").textContent = deck.reasoning || "";

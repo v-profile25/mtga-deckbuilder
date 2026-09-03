@@ -1,7 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { clampCopyLimits, checkDeckLegality, checkManaBase } from "../src/deckRules.js";
+import { clampCopyLimits, checkDeckLegality, checkManaBase, checkWildcardBudget } from "../src/deckRules.js";
+
+test("checkWildcardBudget is silent when no budget was set", () => {
+  assert.deepEqual(checkWildcardBudget({ common: 0, uncommon: 0, rare: 5, mythic: 5 }, undefined), []);
+  assert.deepEqual(checkWildcardBudget({ common: 0, uncommon: 0, rare: 5, mythic: 5 }, null), []);
+});
+
+test("checkWildcardBudget is silent when mythic+rare needed is within budget", () => {
+  assert.deepEqual(checkWildcardBudget({ common: 20, uncommon: 20, rare: 5, mythic: 3 }, 10), []);
+});
+
+test("checkWildcardBudget flags an overrun and ignores common/uncommon entirely", () => {
+  const issues = checkWildcardBudget({ common: 50, uncommon: 50, rare: 8, mythic: 5 }, 10);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /Needs 13 mythic\/rare wildcards, over your budget of 10/);
+});
+
+test("checkWildcardBudget treats an exact match as within budget, not an overrun", () => {
+  assert.deepEqual(checkWildcardBudget({ common: 0, uncommon: 0, rare: 5, mythic: 5 }, 10), []);
+});
+
+test("checkWildcardBudget of 0 still catches any mythic/rare need at all", () => {
+  const issues = checkWildcardBudget({ common: 0, uncommon: 0, rare: 1, mythic: 0 }, 0);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /Needs 1 mythic\/rare wildcards, over your budget of 0/);
+});
 
 test("clampCopyLimits trims a mainboard entry over the format's copy limit", () => {
   const mainboard = [{ arenaId: 1, name: "Lightning Bolt", count: 6 }];

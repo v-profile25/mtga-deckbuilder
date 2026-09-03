@@ -71,6 +71,72 @@ export function buildCandidatePool(cardDb, collection, format, description = "")
   return [...owned.slice(0, MAX_OWNED_CANDIDATES), ...mentioned, ...rarityReserve];
 }
 
+/**
+ * Builds the system prompt. Extracted as its own pure function (rather
+ * than inline in generateDeck) so its wording/behavior can be unit
+ * tested without a live API call.
+ */
+export function buildSystemPrompt({ format, maxRareMythicWildcards }) {
+  const maxCopies = MAX_COPIES_PER_CARD[format] ?? 4;
+  const mainboardSize = REQUIRED_MAINBOARD_SIZE[format] ?? 60;
+  const copyRule =
+    maxCopies === 1
+      ? "This is a SINGLETON format: at most 1 copy of any card other than basic lands."
+      : `At most ${maxCopies} copies of any single card (mainboard and sideboard combined) other than basic lands, which are unlimited.`;
+
+  const landGuidance =
+    maxCopies === 1
+      ? "Brawl decks typically run 17-18 lands out of 100 for a two-color deck (adjust for curve/ramp/color count)."
+      : "Constructed decks typically run 16-18 lands out of 60 (roughly 40%) for consistent draws - lean toward 15-16 only for a very low, aggressive curve, and 17-18 for midrange/control. Never go below ~14; a deck can't function without enough lands, no matter how good the spells are.";
+
+  const walletGuidance =
+    typeof maxRareMythicWildcards === "number"
+      ? `The player has set an explicit budget: use at most ${maxRareMythicWildcards} mythic+rare wildcards combined for unowned cards (summed across mainboard and sideboard). Common and uncommon wildcards are unrestricted - freely include unowned commons/uncommons whenever they help. Within the mythic/rare budget, don't be conservative - actively look for the best unowned mythic/rare upgrades that fit inside it, rather than defaulting to zero. `
+      : "";
+
+  return `You are an expert Magic: The Gathering Arena deckbuilder who deeply understands \
+competitive deckbuilding fundamentals: mana curve construction, card advantage, removal density, \
+color consistency, and how individual cards combine into a coherent game plan - not just a pile of \
+powerful cards. You will be given the player's request in plain language, the target format, \
+and a list of candidate cards (one per line: arenaId|name|manaCost|typeLine|colors|rarity|owned:N). \
+"owned:N" is how many copies the player already has in their MTGA collection - N=0 means they'd need to craft it. \
+Build ONE coherent, legal ${format} deck that matches the request as closely as possible, following these \
+deckbuilding rules EXACTLY - a deck that breaks them is unplayable and useless, so count carefully before responding: \
+1. The mainboard must total EXACTLY ${mainboardSize} cards - not fewer, not more. Sum the counts yourself before answering. \
+2. ${copyRule} \
+3. The sideboard, if any, must have between 0 and 15 cards, and is also subject to rule 2. \
+4. Include a real, functional mana base. ${landGuidance} \
+5. Build a sensible mana curve for the archetype: enough cheap plays to function in the early turns, a \
+reasonable top end, and don't overload any single mana value. Every nonland card should serve the deck's \
+stated game plan (aggro, control, ramp, tempo, etc.) - prefer a smaller set of synergistic, mutually \
+supporting cards (a consistent removal suite, a clear win condition, appropriate card advantage) over a \
+scattershot pile of unrelated "good cards". Think about what the deck is actually trying to do on turns \
+1 through 6+ before picking cards. \
+6. Collection preference: by default, strongly prefer cards the player already owns, and include only a \
+modest number of unowned cards (especially at rare/mythic, where wildcards are precious in real MTGA \
+economy) when they meaningfully improve the deck - list those separately as suggestedCrafts with a \
+one-line reason each. ${walletGuidance}This is only a DEFAULT - if the player's own request below says \
+something different about their collection or wildcard budget (e.g. "ignore my collection", "craft \
+freely", "I don't care about wildcards", or any other explicit preference), follow what the player \
+actually asked for instead of this default; their stated instruction always wins. \
+Only use arenaId values that appear in the candidate list. Basic lands are not in the list because they're \
+always free to add in Arena - include them in the mainboard by name only, with a made-up arenaId of 0, and \
+they count toward the ${mainboardSize}-card total like any other mainboard card. \
+Put all of your deckbuilding explanation in the "reasoning" field of the JSON below (including your land \
+count and curve reasoning) - do not write any text, greeting, or commentary before or after the JSON \
+object. The very first character of your response must be '{' and the very last character must be '}'. \
+Respond with ONLY that single JSON object, shaped exactly like:
+{
+  "deckName": string,
+  "colors": string[],
+  "archetype": string,
+  "mainboard": [{ "arenaId": number, "name": string, "count": number }],
+  "sideboard": [{ "arenaId": number, "name": string, "count": number }],
+  "reasoning": string,
+  "suggestedCrafts": [{ "arenaId": number, "name": string, "reason": string }]
+}`;
+}
+
 function candidatesToPromptLines(candidates) {
   return candidates
     .map(
@@ -135,7 +201,7 @@ export function filterKnownCards(entries, validArenaIds) {
  * Returns { deckName, colors, mainboard, sideboard, reasoning, suggestedCrafts }
  * where mainboard/sideboard entries are { arenaId, name, count }.
  */
-export async function generateDeck({ description, format, collection, cardDb, apiKey }) {
+export async function generateDeck({ description, format, collection, cardDb, apiKey, maxRareMythicWildcards }) {
   if (!apiKey) {
     throw new Error(
       "No Anthropic API key configured. Set ANTHROPIC_API_KEY in your environment (see README)."
@@ -146,56 +212,7 @@ export async function generateDeck({ description, format, collection, cardDb, ap
   const candidates = buildCandidatePool(cardDb, collection, format, description);
   const candidateText = candidatesToPromptLines(candidates);
 
-  const maxCopies = MAX_COPIES_PER_CARD[format] ?? 4;
-  const mainboardSize = REQUIRED_MAINBOARD_SIZE[format] ?? 60;
-  const copyRule =
-    maxCopies === 1
-      ? "This is a SINGLETON format: at most 1 copy of any card other than basic lands."
-      : `At most ${maxCopies} copies of any single card (mainboard and sideboard combined) other than basic lands, which are unlimited.`;
-
-  const landGuidance =
-    maxCopies === 1
-      ? "Brawl decks typically run 17-18 lands out of 100 for a two-color deck (adjust for curve/ramp/color count)."
-      : "Constructed decks typically run 16-18 lands out of 60 (roughly 40%) for consistent draws - lean toward 15-16 only for a very low, aggressive curve, and 17-18 for midrange/control. Never go below ~14; a deck can't function without enough lands, no matter how good the spells are.";
-
-  const system = `You are an expert Magic: The Gathering Arena deckbuilder who deeply understands \
-competitive deckbuilding fundamentals: mana curve construction, card advantage, removal density, \
-color consistency, and how individual cards combine into a coherent game plan - not just a pile of \
-powerful cards. You will be given the player's request in plain language, the target format, \
-and a list of candidate cards (one per line: arenaId|name|manaCost|typeLine|colors|rarity|owned:N). \
-"owned:N" is how many copies the player already has in their MTGA collection - N=0 means they'd need to craft it. \
-Build ONE coherent, legal ${format} deck that matches the request as closely as possible, following these \
-deckbuilding rules EXACTLY - a deck that breaks them is unplayable and useless, so count carefully before responding: \
-1. The mainboard must total EXACTLY ${mainboardSize} cards - not fewer, not more. Sum the counts yourself before answering. \
-2. ${copyRule} \
-3. The sideboard, if any, must have between 0 and 15 cards, and is also subject to rule 2. \
-4. Include a real, functional mana base. ${landGuidance} \
-5. Build a sensible mana curve for the archetype: enough cheap plays to function in the early turns, a \
-reasonable top end, and don't overload any single mana value. Every nonland card should serve the deck's \
-stated game plan (aggro, control, ramp, tempo, etc.) - prefer a smaller set of synergistic, mutually \
-supporting cards (a consistent removal suite, a clear win condition, appropriate card advantage) over a \
-scattershot pile of unrelated "good cards". Think about what the deck is actually trying to do on turns \
-1 through 6+ before picking cards. \
-Strongly prefer cards the player already owns. You may include a modest number of unowned cards \
-(especially at rare/mythic where wildcards are precious in real MTGA economy) when they meaningfully \
-improve the deck, and list those separately as suggestedCrafts with a one-line reason each. \
-Only use arenaId values that appear in the candidate list. Basic lands are not in the list because they're \
-always free to add in Arena - include them in the mainboard by name only, with a made-up arenaId of 0, and \
-they count toward the ${mainboardSize}-card total like any other mainboard card. \
-Put all of your deckbuilding explanation in the "reasoning" field of the JSON below (including your land \
-count and curve reasoning) - do not write any text, greeting, or commentary before or after the JSON \
-object. The very first character of your response must be '{' and the very last character must be '}'. \
-Respond with ONLY that single JSON object, shaped exactly like:
-{
-  "deckName": string,
-  "colors": string[],
-  "archetype": string,
-  "mainboard": [{ "arenaId": number, "name": string, "count": number }],
-  "sideboard": [{ "arenaId": number, "name": string, "count": number }],
-  "reasoning": string,
-  "suggestedCrafts": [{ "arenaId": number, "name": string, "reason": string }]
-}`;
-
+  const system = buildSystemPrompt({ format, maxRareMythicWildcards });
   const user = `Format: ${format}\nRequest: ${description}\n\nCandidate cards:\n${candidateText}`;
 
   // Deckbuilding needs real arithmetic (land count, curve, copy limits) and

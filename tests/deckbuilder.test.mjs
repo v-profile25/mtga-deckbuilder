@@ -1,7 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractJsonBlock, filterKnownCards, buildCandidatePool } from "../src/deckbuilder.js";
+import { extractJsonBlock, filterKnownCards, buildCandidatePool, buildSystemPrompt } from "../src/deckbuilder.js";
+
+test("buildSystemPrompt always tells the model the player's own request overrides the owned-cards default", () => {
+  const prompt = buildSystemPrompt({ format: "standard" });
+  assert.match(prompt, /only a DEFAULT/);
+  assert.match(prompt, /follow what the player actually asked for instead of this default/);
+});
+
+test("buildSystemPrompt says nothing about a wildcard budget when none is set", () => {
+  const prompt = buildSystemPrompt({ format: "standard" });
+  assert.doesNotMatch(prompt, /explicit budget/);
+});
+
+test("buildSystemPrompt states the numeric wildcard budget and tells the model not to be conservative within it", () => {
+  const prompt = buildSystemPrompt({ format: "standard", maxRareMythicWildcards: 10 });
+  assert.match(prompt, /at most 10 mythic\+rare wildcards/);
+  assert.match(prompt, /[Cc]ommon and uncommon wildcards are unrestricted/);
+  assert.match(prompt, /don't be conservative/);
+});
+
+test("buildSystemPrompt treats a zero wildcard budget as a real, explicit setting (not 'unset')", () => {
+  const prompt = buildSystemPrompt({ format: "standard", maxRareMythicWildcards: 0 });
+  assert.match(prompt, /at most 0 mythic\+rare wildcards/);
+});
 
 function makeCard(arenaId, overrides = {}) {
   return {

@@ -8,6 +8,7 @@ import { ensureCardCache, loadCardDb, cacheExists, cacheStat } from "./src/scryf
 import { generateDeck } from "./src/deckbuilder.js";
 import { computeCraftCost } from "./src/craft.js";
 import { formatArenaImport } from "./src/deckExport.js";
+import { checkWildcardBudget } from "./src/deckRules.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
@@ -65,9 +66,16 @@ app.post("/api/cards/sync", async (req, res) => {
 
 app.post("/api/deck/generate", async (req, res) => {
   try {
-    const { description, format = "standard" } = req.body || {};
+    const { description, format = "standard", maxRareMythicWildcards } = req.body || {};
     if (!description || typeof description !== "string") {
       return res.status(400).json({ error: "Missing 'description' string in request body." });
+    }
+    let wildcardBudget;
+    if (maxRareMythicWildcards !== undefined && maxRareMythicWildcards !== null) {
+      wildcardBudget = Number(maxRareMythicWildcards);
+      if (!Number.isInteger(wildcardBudget) || wildcardBudget < 0) {
+        return res.status(400).json({ error: "'maxRareMythicWildcards' must be a non-negative integer." });
+      }
     }
     if (!cacheExists()) {
       return res.status(400).json({ error: "Card database not synced yet. POST /api/cards/sync first." });
@@ -84,9 +92,15 @@ app.post("/api/deck/generate", async (req, res) => {
       collection,
       cardDb,
       apiKey: process.env.ANTHROPIC_API_KEY,
+      maxRareMythicWildcards: wildcardBudget,
     });
 
     const craftCost = computeCraftCost(deck.mainboard || [], collection, cardDb);
+    const budgetIssues = checkWildcardBudget(craftCost.wildcardsNeeded, wildcardBudget);
+    if (budgetIssues.length > 0) {
+      deck.legality.valid = false;
+      deck.legality.issues = [...deck.legality.issues, ...budgetIssues];
+    }
     const arenaImport = formatArenaImport(deck.mainboard, deck.sideboard);
     res.json({ deck, craftCost, arenaImport });
   } catch (err) {

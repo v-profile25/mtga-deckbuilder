@@ -46,7 +46,12 @@
           <option value="brawl">Brawl</option>
         </select>
       </div>
-      <textarea id="description" rows="4" placeholder="e.g. Mono red aggro that wants to curve out and burn the opponent's face by turn 6"></textarea>
+      <textarea id="description" rows="4" placeholder="e.g. Mono red aggro that wants to curve out and burn the opponent's face by turn 6. You can also say things like 'ignore my collection' or 'craft freely' here."></textarea>
+      <div class="row">
+        <label for="maxWildcards">Max mythic/rare wildcards (optional)</label>
+        <input id="maxWildcards" type="number" min="0" step="1" placeholder="unset = strongly prefer owned" />
+      </div>
+      <p class="status">Leave blank for the default (strongly prefer what you own). Set a number to let it spend up to that many mythic/rare wildcards - common/uncommon wildcards are never limited.</p>
       <button id="generate">Generate deck</button>
     </section>
 
