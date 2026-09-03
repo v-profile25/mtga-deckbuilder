@@ -36,6 +36,35 @@ test("buildCandidatePool always reserves room for unowned cards, even when owned
   assert.ok(names.includes("Unowned Bomb"), "an unowned card must still make it into the candidate pool");
 });
 
+test("buildCandidatePool includes an unowned card explicitly named in the request, even at low rarity", () => {
+  // Regression test for the real reported case: "build a deck around
+  // Getaway Barrel" where Getaway Barrel is unowned and not high-rarity
+  // enough to make the default top-150-by-rarity unowned reserve. Naming
+  // a card outright must guarantee it's a candidate regardless of rarity
+  // - the model can't build around a card it was never shown.
+  const cardDb = new Map();
+  for (let i = 0; i < 200; i++) cardDb.set(i, makeCard(i, { rarity: "mythic" })); // fills the rarity reserve
+  cardDb.set(9999, makeCard(9999, { name: "Getaway Barrel", rarity: "uncommon" }));
+
+  const candidates = buildCandidatePool(cardDb, {}, "standard", "build a deck around Getaway Barrel");
+  assert.ok(
+    candidates.some((c) => c.name === "Getaway Barrel"),
+    "a card named directly in the request must be included as a candidate"
+  );
+});
+
+test("buildCandidatePool is case-insensitive when matching a named card against the request", () => {
+  const cardDb = new Map([[1, makeCard(1, { name: "Getaway Barrel", rarity: "uncommon" })]]);
+  const candidates = buildCandidatePool(cardDb, {}, "standard", "GETAWAY BARREL deck please");
+  assert.ok(candidates.some((c) => c.name === "Getaway Barrel"));
+});
+
+test("buildCandidatePool doesn't duplicate a named card that also lands in the rarity reserve", () => {
+  const cardDb = new Map([[1, makeCard(1, { name: "Getaway Barrel", rarity: "mythic" })]]);
+  const candidates = buildCandidatePool(cardDb, {}, "standard", "Getaway Barrel deck");
+  assert.equal(candidates.filter((c) => c.name === "Getaway Barrel").length, 1);
+});
+
 test("buildCandidatePool never drops an owned card, even a real collection's worth (well beyond the old 800 cap)", () => {
   // Regression test for the second half of the same bug class: owned
   // cards were also capped (at 800), truncated in arbitrary card-cache

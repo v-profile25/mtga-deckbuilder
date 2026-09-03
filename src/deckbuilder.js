@@ -35,22 +35,40 @@ const FORMAT_LEGALITY_KEY = {
   brawl: "brawl",
 };
 
-export function buildCandidatePool(cardDb, collection, format) {
+export function buildCandidatePool(cardDb, collection, format, description = "") {
   const legalityKey = FORMAT_LEGALITY_KEY[format] || "standard";
+  const descriptionLower = description.toLowerCase();
 
   const owned = [];
   const unowned = [];
+  const mentioned = [];
   for (const card of cardDb.values()) {
     if (card.legalities?.[legalityKey] !== "legal") continue;
     if (card.typeLine?.includes("Basic Land")) continue; // always available, no need to list
     const count = lookupOwnedCount(collection, card);
-    (count > 0 ? owned : unowned).push({ ...card, owned: count });
+    if (count > 0) {
+      owned.push({ ...card, owned: count });
+      continue;
+    }
+    unowned.push({ ...card, owned: count });
+    // A card the player names outright ("build around Getaway Barrel")
+    // must be a candidate regardless of rarity - the top-N-by-rarity
+    // reserve below is a reasonable default for "what's worth
+    // suggesting in general", but it has no idea what the player
+    // actually asked for, so a specific, low-rarity request would
+    // otherwise never make the cut no matter how directly it was asked.
+    if (card.name && descriptionLower.includes(card.name.toLowerCase())) {
+      mentioned.push({ ...card, owned: count });
+    }
   }
 
   const rarityRank = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
   unowned.sort((a, b) => (rarityRank[a.rarity] ?? 4) - (rarityRank[b.rarity] ?? 4));
 
-  return [...owned.slice(0, MAX_OWNED_CANDIDATES), ...unowned.slice(0, MAX_UNOWNED_CANDIDATES)];
+  const mentionedIds = new Set(mentioned.map((c) => c.arenaId));
+  const rarityReserve = unowned.filter((c) => !mentionedIds.has(c.arenaId)).slice(0, MAX_UNOWNED_CANDIDATES);
+
+  return [...owned.slice(0, MAX_OWNED_CANDIDATES), ...mentioned, ...rarityReserve];
 }
 
 function candidatesToPromptLines(candidates) {
@@ -125,7 +143,7 @@ export async function generateDeck({ description, format, collection, cardDb, ap
   }
   const client = new Anthropic({ apiKey });
 
-  const candidates = buildCandidatePool(cardDb, collection, format);
+  const candidates = buildCandidatePool(cardDb, collection, format, description);
   const candidateText = candidatesToPromptLines(candidates);
 
   const maxCopies = MAX_COPIES_PER_CARD[format] ?? 4;
