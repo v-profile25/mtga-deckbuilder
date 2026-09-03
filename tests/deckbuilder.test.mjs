@@ -36,6 +36,28 @@ test("buildCandidatePool always reserves room for unowned cards, even when owned
   assert.ok(names.includes("Unowned Bomb"), "an unowned card must still make it into the candidate pool");
 });
 
+test("buildCandidatePool never drops an owned card, even a real collection's worth (well beyond the old 800 cap)", () => {
+  // Regression test for the second half of the same bug class: owned
+  // cards were also capped (at 800), truncated in arbitrary card-cache
+  // order with no relevance ranking - so a real, owned, legal card could
+  // silently vanish from the prompt for no reason related to the
+  // request, purely because of where it landed in that arbitrary order.
+  const cardDb = new Map();
+  for (let i = 0; i < 1500; i++) cardDb.set(i, makeCard(i));
+  cardDb.set(1499, makeCard(1499, { name: "Getaway Barrel" })); // near the "end" of iteration order
+
+  const collection = {};
+  for (let i = 0; i < 1500; i++) collection[`card ${i}`] = 1;
+  collection["getaway barrel"] = 1;
+
+  const candidates = buildCandidatePool(cardDb, collection, "standard");
+  assert.ok(
+    candidates.some((c) => c.name === "Getaway Barrel"),
+    "an owned card must never be dropped just because the owned pool is large"
+  );
+  assert.equal(candidates.filter((c) => c.owned > 0).length, 1500, "every owned legal card should be present");
+});
+
 test("buildCandidatePool caps owned and unowned independently rather than one crowding out the other", () => {
   const cardDb = new Map();
   for (let i = 0; i < 850; i++) cardDb.set(i, makeCard(i));

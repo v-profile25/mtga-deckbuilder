@@ -9,11 +9,22 @@ import {
 } from "./deckRules.js";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
-const MAX_OWNED_CANDIDATES = 800;
-// A fixed reserve, not a leftover-of-800 slice - a large collection (more
-// than 800 owned+legal cards, easily true for a real multi-thousand-card
-// collection) must never crowd unowned cards out of the prompt entirely,
-// or the model has nothing to suggest crafting even when asked to.
+// Owned cards aren't ranked by relevance - cutting them off at some cap
+// would silently drop arbitrary ones (whatever order the card cache
+// happens to store them in) with no relation to which ones actually
+// matter for the request. A real collection can have well over a
+// thousand legal-in-format owned cards; input tokens are cheap relative
+// to the output budget this app already spends, so there's no real cost
+// reason to truncate here - this ceiling only exists to bound a
+// pathological case (a corrupted import producing tens of thousands of
+// "owned" entries), not to trim a normal collection.
+const MAX_OWNED_CANDIDATES = 5000;
+// Unowned cards get a fixed, rarity-prioritized reserve instead - the
+// unowned pool is the entire rest of the format's card pool (thousands
+// of cards with nothing to do with what the player owns), so it's
+// deliberately curated down to the best crafting suggestions rather than
+// shown in full. This must never come out of owned's budget, or a large
+// collection crowds unowned out of the prompt entirely.
 const MAX_UNOWNED_CANDIDATES = 150;
 
 const FORMAT_LEGALITY_KEY = {
