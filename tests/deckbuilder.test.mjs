@@ -1,7 +1,56 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractJsonBlock, filterKnownCards } from "../src/deckbuilder.js";
+import { extractJsonBlock, filterKnownCards, buildCandidatePool } from "../src/deckbuilder.js";
+
+function makeCard(arenaId, overrides = {}) {
+  return {
+    arenaId,
+    name: `Card ${arenaId}`,
+    manaCost: "{1}",
+    typeLine: "Creature",
+    colors: ["R"],
+    rarity: "common",
+    legalities: { standard: "legal" },
+    ...overrides,
+  };
+}
+
+test("buildCandidatePool always reserves room for unowned cards, even when owned alone exceeds the candidate cap", () => {
+  // Regression test: a large real collection (thousands of unique cards)
+  // can easily have more than 800 legal-in-format owned cards on its own.
+  // The candidate pool used to fill entirely with owned cards in that
+  // case, leaving zero slots for anything unowned - so the model could
+  // never suggest a card worth crafting, no matter what was asked.
+  const cardDb = new Map();
+  for (let i = 0; i < 900; i++) {
+    cardDb.set(i, makeCard(i, { rarity: "common" }));
+  }
+  cardDb.set(9000, makeCard(9000, { name: "Unowned Bomb", rarity: "mythic" }));
+
+  const collection = {};
+  for (let i = 0; i < 900; i++) collection[`card ${i}`] = 4;
+
+  const candidates = buildCandidatePool(cardDb, collection, "standard");
+  const names = candidates.map((c) => c.name);
+  assert.ok(names.includes("Unowned Bomb"), "an unowned card must still make it into the candidate pool");
+});
+
+test("buildCandidatePool caps owned and unowned independently rather than one crowding out the other", () => {
+  const cardDb = new Map();
+  for (let i = 0; i < 850; i++) cardDb.set(i, makeCard(i));
+  for (let i = 850; i < 1000; i++) cardDb.set(i, makeCard(i, { rarity: "mythic" }));
+
+  const collection = {};
+  for (let i = 0; i < 850; i++) collection[`card ${i}`] = 1;
+
+  const candidates = buildCandidatePool(cardDb, collection, "standard");
+  const ownedCount = candidates.filter((c) => c.owned > 0).length;
+  const unownedCount = candidates.filter((c) => c.owned === 0).length;
+
+  assert.ok(ownedCount > 0, "owned cards must be represented");
+  assert.equal(unownedCount, 150, "all 150 available unowned cards should fit within the unowned reserve");
+});
 
 test("extractJsonBlock parses a clean JSON-only response", () => {
   const text = `{"deckName": "Mono Red", "mainboard": []}`;

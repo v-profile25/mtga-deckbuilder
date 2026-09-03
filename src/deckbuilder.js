@@ -9,7 +9,12 @@ import {
 } from "./deckRules.js";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
-const MAX_CANDIDATES = 800;
+const MAX_OWNED_CANDIDATES = 800;
+// A fixed reserve, not a leftover-of-800 slice - a large collection (more
+// than 800 owned+legal cards, easily true for a real multi-thousand-card
+// collection) must never crowd unowned cards out of the prompt entirely,
+// or the model has nothing to suggest crafting even when asked to.
+const MAX_UNOWNED_CANDIDATES = 150;
 
 const FORMAT_LEGALITY_KEY = {
   standard: "standard",
@@ -19,7 +24,7 @@ const FORMAT_LEGALITY_KEY = {
   brawl: "brawl",
 };
 
-function buildCandidatePool(cardDb, collection, format) {
+export function buildCandidatePool(cardDb, collection, format) {
   const legalityKey = FORMAT_LEGALITY_KEY[format] || "standard";
 
   const owned = [];
@@ -34,8 +39,7 @@ function buildCandidatePool(cardDb, collection, format) {
   const rarityRank = { mythic: 0, rare: 1, uncommon: 2, common: 3 };
   unowned.sort((a, b) => (rarityRank[a.rarity] ?? 4) - (rarityRank[b.rarity] ?? 4));
 
-  const remainingSlots = Math.max(0, MAX_CANDIDATES - owned.length);
-  return [...owned, ...unowned.slice(0, remainingSlots)];
+  return [...owned.slice(0, MAX_OWNED_CANDIDATES), ...unowned.slice(0, MAX_UNOWNED_CANDIDATES)];
 }
 
 function candidatesToPromptLines(candidates) {
